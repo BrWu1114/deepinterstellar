@@ -1,7 +1,7 @@
 import React from 'react';
-import { Shield, Sword, Terminal, Activity, Volume2, VolumeX } from 'lucide-react';
+import { Shield, Sword, Terminal, Activity, Volume2, VolumeX, Mic, MicOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { Team, SimulationLog, Asset, AiState } from './types';
+import type { Team, SimulationLog, Asset } from './types';
 import { NetworkVisualizer } from './components/NetworkVisualizer';
 import { soundEngine } from './utils/synth';
 import { PacketStream, type PacketData } from './components/PacketStream';
@@ -46,15 +46,15 @@ const TeamCard = ({
   );
 };
 
-const Header = ({ currentView, onSetView, isMuted, onToggleMute, isCombatMode, onToggleCombat, aiState, onToggleSurvival }: {
+const Header = ({ currentView, onSetView, isMuted, onToggleMute, isCombatMode, onToggleCombat, isListening, onToggleVoice }: {
   currentView: string,
   onSetView: (v: 'DASHBOARD' | 'OPERATIONS' | 'REPORTS') => void,
   isMuted: boolean,
   onToggleMute: () => void,
   isCombatMode: boolean,
   onToggleCombat: () => void,
-  aiState?: AiState,
-  onToggleSurvival: () => void
+  isListening: boolean,
+  onToggleVoice: () => void
 }) => (
   <header className="w-full py-6 px-12 flex justify-between items-center border-b border-glass glass-card rounded-none mb-12">
     <div className="flex items-center gap-3">
@@ -81,11 +81,11 @@ const Header = ({ currentView, onSetView, isMuted, onToggleMute, isCombatMode, o
         {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
       </button>
       <button
-        onClick={onToggleSurvival}
-        className={`px-4 py-2 rounded-lg text-[10px] font-black tracking-widest transition-all border ${aiState?.enabled ? 'bg-red-500 text-black border-red-500 animate-pulse' : 'bg-glass text-secondary border-glass hover:text-white'}`}
-        disabled={!aiState}
+        onClick={onToggleVoice}
+        className={`p-2 rounded-lg transition-colors border ${isListening ? 'bg-red-500/20 text-red-500 border-red-500 animate-pulse' : 'hover:bg-glass text-secondary border-transparent hover:text-white'}`}
+        title={isListening ? "Stop Voice Command" : "Start Voice Command"}
       >
-        {aiState?.enabled ? '⚠ SURVIVAL MODE' : 'SURVIVAL MODE'}
+        {isListening ? <Mic size={20} /> : <MicOff size={20} />}
       </button>
       <button
         onClick={onToggleCombat}
@@ -94,7 +94,7 @@ const Header = ({ currentView, onSetView, isMuted, onToggleMute, isCombatMode, o
         {isCombatMode ? 'COMBAT ENABLED' : 'ENABLE COMBAT'}
       </button>
     </div>
-  </header>
+  </header >
 );
 
 
@@ -112,7 +112,8 @@ export default function App() {
   const [isShaking, setIsShaking] = React.useState(false);
   const [isCritical, setIsCritical] = React.useState(false);
   const [isAutomating, setIsAutomating] = React.useState<string | null>(null);
-  const [aiState, setAiState] = React.useState<AiState | undefined>(undefined);
+  const [isListening, setIsListening] = React.useState(false);
+  const recognitionRef = React.useRef<any>(null);
 
   // Terminal State
   const [terminalInput, setTerminalInput] = React.useState('');
@@ -130,7 +131,6 @@ export default function App() {
       const data = await response.json();
       setLogs(data.logs);
       setAssets(data.assets.filter((a: Asset) => !selectedTeam || a.team === selectedTeam));
-      setAiState(data.ai);
     } catch (err) {
       console.error('Failed to fetch simulation state:', err);
     }
@@ -187,24 +187,76 @@ export default function App() {
     if (!nextMute) soundEngine.playClick();
   };
 
-  const toggleSurvival = async () => {
-    if (!aiState || !selectedTeam) return;
-    try {
-      soundEngine.playClick();
-      const nextState = !aiState.enabled;
-      // If we are Red, AI is Blue. If we are Blue, AI is Red.
-      const aiRole = selectedTeam === 'red' ? 'blue' : 'red';
+  const processVoiceCommand = (transcript: string) => {
+    const cmd = transcript.toLowerCase().trim();
+    console.log('Voice Command:', cmd);
+    sendRemoteLog(`VOICE_INPUT: "${cmd}"`, 'voice_module', 'info');
 
-      await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: nextState, role: aiRole })
-      });
-      fetchState();
-    } catch (err) {
-      console.error('Failed to toggle AI:', err);
+    // Simple mapping logic
+    if (cmd.includes('system status') || cmd.includes('report')) {
+      executeSingleCommand('scripts'); // Closest we have to a status summary for now
+    } else if (cmd.startsWith('scan')) {
+      // Extract target if possible, else defaults
+      const parts = cmd.split(' ');
+      const target = parts.length > 1 ? parts[parts.length - 1] : ''; // rudimentary
+      // mapping spoken "red one" to "red-1" could go here
+      executeSingleCommand(target ? `scan ${target}` : 'scan');
+    } else if (cmd.includes('patch')) {
+      const parts = cmd.split(' ');
+      const target = parts.length > 1 ? parts[parts.length - 1] : '';
+      executeSingleCommand(target ? `patch ${target}` : 'patch');
+    } else if (cmd.includes('breach')) {
+      const parts = cmd.split(' ');
+      const target = parts.length > 1 ? parts[parts.length - 1] : '';
+      executeSingleCommand(target ? `breach ${target}` : 'breach');
+    } else {
+      // Fallback: try raw exec
+      executeSingleCommand(cmd);
     }
   };
+
+  const toggleVoice = () => {
+    if (isListening) {
+      if (recognitionRef.current) recognitionRef.current.stop();
+      setIsListening(false);
+      setIsListening(false);
+      sendRemoteLog('Voice Command Module deactivated.', 'system', 'info');
+    } else {
+      if ('webkitSpeechRecognition' in window) {
+        const recognition = new (window as any).webkitSpeechRecognition();
+        recognition.continuous = false; // We want single commands for now
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        recognition.onstart = () => {
+          setIsListening(true);
+          sendRemoteLog('Voice Command Module ONLINE. Listening...', 'system', 'info');
+          soundEngine.playClick();
+        };
+
+        recognition.onresult = (event: any) => {
+          const transcript = event.results[0][0].transcript;
+          processVoiceCommand(transcript);
+        };
+
+        recognition.onerror = (event: any) => {
+          console.error('Speech recognition error', event.error);
+          setIsListening(false);
+          sendRemoteLog(`Voice module error: ${event.error}`, 'system', 'alert');
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+
+        recognitionRef.current = recognition;
+        recognition.start();
+      } else {
+        alert('Voice recognition not supported in this browser.');
+      }
+    }
+  };
+
 
   const sendRemoteLog = async (message: string, source = 'system', type: SimulationLog['type'] = 'info') => {
     try {
@@ -289,11 +341,11 @@ export default function App() {
     const args = cmd.split(' ');
     const baseCmd = args[0];
 
-    // Add local echo to backend logs
+    // Add local echo to backend logs (non-blocking)
     if (!isAutomating) {
       soundEngine.playClick();
     }
-    await sendRemoteLog(`> ${cmdString}`, 'user', 'info');
+    sendRemoteLog(`> ${cmdString}`, 'user', 'info').catch(console.error);
 
     // Command Logic
     switch (baseCmd) {
@@ -456,9 +508,18 @@ export default function App() {
         onToggleMute={toggleMute}
         isCombatMode={isCombatMode}
         onToggleCombat={() => { setIsCombatMode(!isCombatMode); soundEngine.playClick(); }}
-        aiState={aiState}
-        onToggleSurvival={toggleSurvival}
+        isListening={isListening}
+        onToggleVoice={toggleVoice}
       />
+
+      {isListening && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
+          <div className="bg-red-500/10 border border-red-500/50 text-red-500 px-6 py-2 rounded-full font-mono text-xs animate-pulse flex items-center gap-2 backdrop-blur-md">
+            <Mic size={14} />
+            LISTENING FOR COMMAND...
+          </div>
+        </div>
+      )}
 
       <main className="flex-1 w-full max-w-7xl px-8 flex flex-col items-center">
         <AnimatePresence mode="wait">
@@ -722,7 +783,6 @@ export default function App() {
         team={selectedTeam}
         targetId={activeTarget}
         isAutomating={isAutomating}
-        aiEnabled={aiState?.enabled}
       />
 
       <PacketStream

@@ -26,18 +26,11 @@ interface Asset {
     team: 'red' | 'blue';
 }
 
-interface AiState {
-    enabled: boolean;
-    role: 'red' | 'blue';
-    difficulty: number;
-    lastActionAt: number;
-}
 
 interface SimulationState {
     assets: Asset[];
     logs: SimulationLog[];
     scripts: Record<string, string[]>;
-    ai: AiState;
 }
 
 interface ScanResult {
@@ -61,12 +54,6 @@ let simulationState: SimulationState = {
     scripts: {
         "sweep.sh": ["scan 127.0.0.1", "patch blue-1", "patch blue-2", "patch blue-3"],
         "overclock.sh": ["rotate ip", "encrypt payload", "breach blue-1"]
-    },
-    ai: {
-        enabled: false,
-        role: 'red', // Default AI is Red Team (User plays Blue)
-        difficulty: 3000, // 3 seconds
-        lastActionAt: 0
     }
 };
 
@@ -111,45 +98,6 @@ const checkPort = (port: number, host: string): Promise<ScanResult> => {
 
 // Get current simulation state
 app.get('/api/state', (req, res) => {
-    // --- AI LOGIC HOOK ---
-    // Piggyback on client polling to trigger AI moves
-    if (simulationState.ai.enabled) {
-        const now = Date.now();
-        if (now - simulationState.ai.lastActionAt > simulationState.ai.difficulty) {
-            // It's time for an AI move
-            simulationState.ai.lastActionAt = now;
-            const aiRole = simulationState.ai.role;
-            const targetTeam = aiRole === 'red' ? 'blue' : 'red';
-
-            // Find potential targets
-            const potentialTargets = simulationState.assets.filter(a => a.team === targetTeam);
-
-            if (potentialTargets.length > 0) {
-                const target = potentialTargets[Math.floor(Math.random() * potentialTargets.length)];
-
-                if (aiRole === 'red') {
-                    // Red AI Logic (Attacker)
-                    const action = Math.random() > 0.3 ? 'BREACH' : 'ENCRYPT PAYLOAD'; // Prefer breach
-                    if (target.status !== 'compromised') {
-                        if (action === 'BREACH') {
-                            target.status = 'compromised';
-                            addLog('AI_OVERLORD', `SYSTEM BREACH: ${target.name} compromised by Opposing Force.`, 'alert');
-                        } else {
-                            addLog('AI_OVERLORD', `SIGNATURE DETECTED: ${target.name} under encryption attack.`, 'attack');
-                        }
-                    }
-                } else {
-                    // Blue AI Logic (Defender) -- If user plays Red
-                    if (target.status === 'compromised') {
-                        target.status = 'online'; // Insta-patch for AI
-                        addLog('AI_DEFENSE', `COUNTERMEASURE: ${target.name} patched by AI Defense.`, 'defense');
-                    } else if (target.status === 'online') {
-                        addLog('AI_DEFENSE', `HARDENING: ${target.name} reinforced by AI Defense.`, 'defense');
-                    }
-                }
-            }
-        }
-    }
 
     res.json(simulationState);
 });
@@ -196,30 +144,13 @@ app.post('/api/log', (req, res) => {
     res.json({ success: true });
 });
 
-// Toggle AI
-app.post('/api/ai', (req, res) => {
-    const { enabled, role } = req.body;
-    simulationState.ai.enabled = !!enabled;
-    if (role) simulationState.ai.role = role;
-
-    // Reset timer when enabling
-    if (simulationState.ai.enabled) {
-        simulationState.ai.lastActionAt = Date.now();
-        addLog('system', `SURVIVAL MODE ACTIVE. OPPOSING FORCE (${simulationState.ai.role.toUpperCase()}) ENGAGED.`, 'alert');
-    } else {
-        addLog('system', 'Survival Mode deactivated. Threat level normalizing.', 'info');
-    }
-
-    res.json(simulationState.ai);
-});
 
 // Reset simulation state
 app.post('/api/reset', (req, res) => {
     simulationState = {
         assets: INITIAL_ASSETS.map(a => ({ ...a })), // Shallow copy to reset statuses
         logs: [],
-        scripts: { ...simulationState.scripts }, // Preserve scripts on reset
-        ai: { ...simulationState.ai, enabled: false } // Reset AI
+        scripts: { ...simulationState.scripts } // Preserve scripts on reset
     };
     addLog('system', 'Simulation state reset to default.', 'info');
     res.json({ success: true });

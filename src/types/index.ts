@@ -1,11 +1,5 @@
 export type Team = 'red' | 'blue' | null;
 
-export interface AiState {
-  enabled: boolean;
-  role: 'red' | 'blue';
-  difficulty: number;
-  lastActionAt: number;
-}
 
 export interface SimulationLog {
   id: string;
@@ -29,5 +23,19 @@ export interface SimulationState {
   logs: SimulationLog[];
   activeTeam: Team;
   assets: Asset[];
-  ai?: AiState;
+}
+
+// Web Speech API Types
+export interface IWindow extends Window {
+  webkitSpeechRecognition: any;
+}
+
+export interface SpeechRecognitionEvent {
+  results: {
+    [index: number]: {
+      [index: number]: {
+        transcript: string;
+      };
+    };
+  };
 }

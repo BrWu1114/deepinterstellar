@@ -6,10 +6,9 @@ interface CombatHUDProps {
     team: 'red' | 'blue' | null;
     targetId: string | null;
     isAutomating?: string | null;
-    aiEnabled?: boolean;
 }
 
-export const CombatHUD: React.FC<CombatHUDProps> = ({ isActive, team, targetId, isAutomating, aiEnabled }) => {
+export const CombatHUD: React.FC<CombatHUDProps> = ({ isActive, team, targetId, isAutomating }) => {
     const color = team === 'red' ? 'var(--red-accent)' : 'var(--blue-accent)';
 
     return (
@@ -66,13 +65,6 @@ export const CombatHUD: React.FC<CombatHUDProps> = ({ isActive, team, targetId, 
                         </div>
                     )}
 
-                    {/* AI Opponent Warning */}
-                    {isActive && aiEnabled && (
-                        <div className="absolute top-32 left-1/2 -translate-x-1/2 bg-red-900/80 border border-red-500/50 px-8 py-2 rounded text-center animate-pulse z-50">
-                            <div className="text-[10px] text-red-200 tracking-[0.2em] font-bold">WARNING: OPPOSING FORCE DETECTED</div>
-                            <div className="text-xs font-mono font-black text-white mt-1">SURVIVAL PROTOCOLS ENGAGED</div>
-                        </div>
-                    )}
 
                     {/* Floating Data Readouts */}
                     <div className="absolute left-10 top-1/2 -translate-y-1/2 space-y-2 text-[8px] font-mono opacity-30" style={{ color }}>
