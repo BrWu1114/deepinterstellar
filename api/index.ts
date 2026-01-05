@@ -1,6 +1,16 @@
 import express from 'express';
 import cors from 'cors';
-import net from 'net';
+// import net from 'net'; // Mocking for now to debug Vercel crash
+// const net = { Socket: class {} } as any;
+
+const checkPort = (port: number, host: string): Promise<ScanResult> => {
+    return new Promise((resolve) => {
+        // Mock scan logic
+        setTimeout(() => {
+            resolve({ port, status: Math.random() > 0.5 ? 'open' : 'closed' });
+        }, 10);
+    });
+};
 
 const app = express();
 const PORT = 3001;
@@ -70,29 +80,9 @@ const addLog = (source: string, message: string, type: SimulationLog['type']) =>
     simulationState.logs = [newLog, ...simulationState.logs].slice(0, 100); // Keep last 100 logs
 };
 
-const checkPort = (port: number, host: string): Promise<ScanResult> => {
-    return new Promise((resolve) => {
-        const socket = new net.Socket();
-        socket.setTimeout(500);
-
-        socket.on('connect', () => {
-            socket.destroy();
-            resolve({ port, status: 'open' });
-        });
-
-        socket.on('timeout', () => {
-            socket.destroy();
-            resolve({ port, status: 'closed' });
-        });
-
-        socket.on('error', () => {
-            socket.destroy();
-            resolve({ port, status: 'closed' });
-        });
-
-        socket.connect(port, host);
-    });
-};
+// Mocked checkPort replaced above, or I should have done it in one go.
+// Let's just return a mock here to be safe if the previous tool call didn't cover it all.
+// ... actually I should use multi_replace to be clean.
 
 // --- API Endpoints ---
 
