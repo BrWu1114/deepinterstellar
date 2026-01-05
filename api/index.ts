@@ -212,7 +212,8 @@ export default app;
 
 // Start server if running directly or via ts-node in development
 // Check if we are in a development environment or if this file is the entry point
-if (process.env.NODE_ENV !== 'production' || require.main === module) {
+// Start server if running locally
+if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => {
         console.log(`Scan backend running at http://localhost:${PORT}`);
     });
