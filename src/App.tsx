@@ -1,7 +1,7 @@
 import React from 'react';
 import { Shield, Sword, Terminal, Activity, Volume2, VolumeX } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { Team, SimulationLog, Asset } from './types';
+import type { Team, SimulationLog, Asset, AiState } from './types';
 import { NetworkVisualizer } from './components/NetworkVisualizer';
 import { soundEngine } from './utils/synth';
 import { PacketStream, type PacketData } from './components/PacketStream';
@@ -46,13 +46,15 @@ const TeamCard = ({
   );
 };
 
-const Header = ({ currentView, onSetView, isMuted, onToggleMute, isCombatMode, onToggleCombat }: {
+const Header = ({ currentView, onSetView, isMuted, onToggleMute, isCombatMode, onToggleCombat, aiState, onToggleSurvival }: {
   currentView: string,
   onSetView: (v: 'DASHBOARD' | 'OPERATIONS' | 'REPORTS') => void,
   isMuted: boolean,
   onToggleMute: () => void,
   isCombatMode: boolean,
-  onToggleCombat: () => void
+  onToggleCombat: () => void,
+  aiState?: AiState,
+  onToggleSurvival: () => void
 }) => (
   <header className="w-full py-6 px-12 flex justify-between items-center border-b border-glass glass-card rounded-none mb-12">
     <div className="flex items-center gap-3">
@@ -79,6 +81,13 @@ const Header = ({ currentView, onSetView, isMuted, onToggleMute, isCombatMode, o
         {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
       </button>
       <button
+        onClick={onToggleSurvival}
+        className={`px-4 py-2 rounded-lg text-[10px] font-black tracking-widest transition-all border ${aiState?.enabled ? 'bg-red-500 text-black border-red-500 animate-pulse' : 'bg-glass text-secondary border-glass hover:text-white'}`}
+        disabled={!aiState}
+      >
+        {aiState?.enabled ? '⚠ SURVIVAL MODE' : 'SURVIVAL MODE'}
+      </button>
+      <button
         onClick={onToggleCombat}
         className={`px-4 py-2 rounded-lg text-[10px] font-black tracking-widest transition-all border ${isCombatMode ? 'bg-red-500/20 text-red-500 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'bg-glass text-secondary border-glass hover:text-white'}`}
       >
@@ -103,6 +112,7 @@ export default function App() {
   const [isShaking, setIsShaking] = React.useState(false);
   const [isCritical, setIsCritical] = React.useState(false);
   const [isAutomating, setIsAutomating] = React.useState<string | null>(null);
+  const [aiState, setAiState] = React.useState<AiState | undefined>(undefined);
 
   // Terminal State
   const [terminalInput, setTerminalInput] = React.useState('');
@@ -120,6 +130,7 @@ export default function App() {
       const data = await response.json();
       setLogs(data.logs);
       setAssets(data.assets.filter((a: Asset) => !selectedTeam || a.team === selectedTeam));
+      setAiState(data.ai);
     } catch (err) {
       console.error('Failed to fetch simulation state:', err);
     }
@@ -174,6 +185,25 @@ export default function App() {
     setIsMuted(nextMute);
     soundEngine.setMute(nextMute);
     if (!nextMute) soundEngine.playClick();
+  };
+
+  const toggleSurvival = async () => {
+    if (!aiState || !selectedTeam) return;
+    try {
+      soundEngine.playClick();
+      const nextState = !aiState.enabled;
+      // If we are Red, AI is Blue. If we are Blue, AI is Red.
+      const aiRole = selectedTeam === 'red' ? 'blue' : 'red';
+
+      await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: nextState, role: aiRole })
+      });
+      fetchState();
+    } catch (err) {
+      console.error('Failed to toggle AI:', err);
+    }
   };
 
   const sendRemoteLog = async (message: string, source = 'system', type: SimulationLog['type'] = 'info') => {
@@ -426,6 +456,8 @@ export default function App() {
         onToggleMute={toggleMute}
         isCombatMode={isCombatMode}
         onToggleCombat={() => { setIsCombatMode(!isCombatMode); soundEngine.playClick(); }}
+        aiState={aiState}
+        onToggleSurvival={toggleSurvival}
       />
 
       <main className="flex-1 w-full max-w-7xl px-8 flex flex-col items-center">
@@ -690,6 +722,7 @@ export default function App() {
         team={selectedTeam}
         targetId={activeTarget}
         isAutomating={isAutomating}
+        aiEnabled={aiState?.enabled}
       />
 
       <PacketStream
