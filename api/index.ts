@@ -207,6 +207,19 @@ app.get('/api/scan', async (req, res) => {
     });
 });
 
+// Global Error Handler
+app.use((err: any, req: any, res: any, next: any) => {
+    console.error('SERVER ERROR:', err);
+    res.status(500).json({ error: 'Internal Server Error', details: err.message });
+});
+
+// Vercel Configuration
+export const config = {
+    api: {
+        bodyParser: false, // Let Express handle parsing
+    },
+};
+
 // Export for Vercel
 export default app;
 
